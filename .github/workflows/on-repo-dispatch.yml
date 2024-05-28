@@ -1,0 +1,59 @@
+name: ON-REPO-DISPATCH
+run-name: Continuous Deployment ( ${{ github.event_name }} run by ${{ github.actor }} )
+
+on:
+
+  workflow_dispatch:
+    inputs:
+      soln-group:
+        description: 'Solution Group'
+        required: false
+        default: 'devops-demo'
+        type: string
+      blue-green:
+        description: 'Blue or Green Deployment'
+        required: false
+        default: 'blue'
+        type: choice
+        options:
+          - blue
+          - green
+
+  repository_dispatch:
+    types: [deploy]
+
+jobs:
+
+  continuous-deployment:
+    name: CD
+    concurrency:
+      group: '${{ github.workflow }}-${{ github.repository }}'
+      cancel-in-progress: true  
+    uses: dr3dr3/core-pipeline/.github/workflows/continuous-deployment.yml@main
+    with:  
+      target-deploy: ${{ vars.ENVIRONMENT }}
+      soln-group: ${{ github.event.client_payload.soln-group || inputs.soln-group }}
+      blue-green: ${{ github.event.client_payload.blue-green || inputs.blue-green }}
+      site-url: ${{ vars.SITE_URL }}
+      repo-gitops: ${{ vars.REPO_GITOPS }}
+      check-links: ${{ vars.CHECK_LINKS }}
+      deploy-to: ${{ vars.DEPLOY_BLUE }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    secrets: inherit
+
+  # Dispatch to deploy to Production (Blue) environment
+  dispatch:
+    name: Dispatch Blue
+    needs: [continuous-deployment]
+    if: ${{ contains(github.repository,'stg') && vars.REPO_PROD != 'NA' }}
+    uses: dr3dr3/template-pipeline/.github/workflows/deployment-dispatch.yml@main
+    with:
+      soln-group: ${{ github.event.client_payload.soln-group || inputs.soln-group }}
+      blue-green: 'blue'
+      target-repo: ${{ vars.REPO_PROD }}
+    permissions:
+      contents: write
+    secrets: inherit
